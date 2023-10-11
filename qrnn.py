@@ -328,7 +328,6 @@ def learn(model, train_ds, test_ds, loss_fn, opt, epochs, metric_fn = None, reco
     metric_record = list()
 
     for epoch in range(epochs):
-        print("\nStart of epoch %d" % (epoch,))
 
         # do opt
         for step, (x_batch, y_batch) in enumerate(train_ds):
@@ -339,17 +338,6 @@ def learn(model, train_ds, test_ds, loss_fn, opt, epochs, metric_fn = None, reco
             if record_steps and step % skip == 0:
                 if record_trace:
                     state = model(x_batch, return_state = True)
-                    print(
-                        'Training loss and mean trace (for one batch) at step {}: {:.4f}, {:.4f}'.format(
-                            step, float(loss), trace(state))
-                    )
-                else:
-                    print(
-                    'Training loss (for one batch) at step {}: {:.4f},'.format(
-                        step, float(loss))
-                    )
-
-                print('Seen so far: {} samples'.format((step + 1) * y_batch.shape[0]))
 
             gradients = tape.gradient(loss, model.trainable_variables)
             opt.apply_gradients(zip(gradients, model.trainable_variables))
@@ -379,16 +367,11 @@ def learn(model, train_ds, test_ds, loss_fn, opt, epochs, metric_fn = None, reco
 
         losses_tr = statistics.mean(losses_tr)
         losses_te = statistics.mean(losses_te)
-        print('Train and test losses: {:.4f}, {:.4f}'.format(losses_tr, losses_te))
-        if record_trace:
-            print('Train and test mean traces: {:.4f}, {:.4f}'.format(statistics.mean(traces_tr), statistics.mean(traces_te)))
-            print('Train and test min traces: {:.4f}, {:.4f}'.format(min(traces_tr), min(traces_te)))
 
         train_loss_record.append(losses_tr)
         test_loss_record.append(losses_te)
         if metric_fn:
             metric_te = statistics.mean(metric_te)
-            print('Metric: {:.4f}'.format(metric_te))
             metric_record.append(metric_te)
 
     return tf.stack(train_loss_record), tf.stack(test_loss_record), tf.stack(metric_record)
@@ -413,6 +396,82 @@ def plot(te_r, metric):
 
     plt.show()
 
+
+
+
+def acc_fn(out, y):
+    pred = tf.math.argmax(out, axis = 1)
+    one_hot = np.zeros((pred.shape[0], class_n))
+    one_hot[np.arange(pred.shape[0]), pred] = 1
+    vector = one_hot * 2 - 1
+    f = tf.cast(vector == y, tf.float32)
+    return float(tf.reduce_mean(f))
+
+#Classical Model
+
+def RNN(x_tr,x_tes,y_tr,y_tes):
+
+    mean = np.mean(x_tr, axis = 0)
+    x_tr -= mean
+    x_tes -= mean
+    # Due to the limited size of infinite dimensional hilbert space in simulation we will put all data in a range from -1 to 1
+    anti_var = np.max(abs(x_tr), axis = 0)
+    x_tr /=  anti_var
+    x_tes /=  anti_var
+
+    tf.random.set_seed(42)
+
+    bs = 4
+    epochs = 10
+
+    train_dataset = tf.data.Dataset.from_tensor_slices((x_tr, y_tr)).batch(bs)
+    test_dataset = tf.data.Dataset.from_tensor_slices((x_tes, y_tes)).batch(bs)
+
+    loss_fn = tf.keras.losses.MeanSquaredError()
+    opt = tf.keras.optimizers.legacy.Adam(learning_rate = 0.05)
+
+    model = tf.keras.Sequential([
+    tf.keras.layers.Dense(4, activation=tf.nn.relu, input_shape=(4,)),  
+    tf.keras.layers.Dense(3, activation=tf.nn.tanh),
+    ])
+
+    tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric_fn = acc_fn, epochs = epochs)
+
+    return acc
+
+
+
+#Quantum Model
+
+def QRNN(x_tr,x_tes,y_tr,y_tes):
+
+    qml.enable_tape()
+    cutoff_dim = 9
+    dev = qml.device('strawberryfields.tf', cutoff_dim = cutoff_dim, wires = 4)
+    qml.enable_tape()
+
+    # it seems that it is not possible to calc qml.state() for fock space right now ...
+    qml.enable_tape()
+
+    tf.random.set_seed(42)
+
+    bs = 4
+    epochs = 10
+
+    train_dataset = tf.data.Dataset.from_tensor_slices((x_tr, y_tr)).batch(bs)
+    test_dataset = tf.data.Dataset.from_tensor_slices((x_tes, y_tes)).batch(bs)
+
+    loss_fn = tf.keras.losses.MeanSquaredError()
+    opt = tf.keras.optimizers.legacy.Adam(learning_rate = 0.05)
+
+    model = tf.keras.Sequential([
+    QuantumDenseNet(4, class_n, layers = 2, dev = dev),
+    tf.keras.layers.Activation('tanh')
+    ])
+    tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric_fn = acc_fn, epochs = epochs)
+    
+    return acc
+
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 
@@ -428,60 +487,33 @@ y = one_hot
 # we will make targets to be a range from -1 to 1 for symmetry
 y = y * 2 - 1
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+from sklearn.model_selection import KFold
+RNNacc = np.zeros(5)
+QRNNacc = np.zeros(5)
 
-mean = np.mean(X_train, axis = 0)
-X_train -= mean
-X_test -= mean
-# Due to the limited size of infinite dimensional hilbert space in simulation we will put all data in a range from -1 to 1
-anti_var = np.max(abs(X_train), axis = 0)
-X_train /=  anti_var
-X_test /=  anti_var
+kf = KFold(n_splits=5,random_state=42,shuffle=True)
 
-tf.random.set_seed(42)
+for i, (train_index, test_index) in enumerate(kf.split(X,y=y)):
+    x_train = [X[j] for j in train_index]
+    x_test = [X[j] for j in test_index]
+    y_train = [y[j] for j in train_index]
+    y_test = [y[j] for j in test_index]
 
-bs = 4
-epochs = 10
+    RNNarr = RNN(x_train,x_test,y_train,y_test).numpy()
+    RNNacc[i] = RNNarr[-1]
 
-train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).batch(bs)
-test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test)).batch(bs)
+print("RNN cross validations",RNNacc)
+print("RNN Accuracy", sum(RNNacc)/len(RNNacc))
+print()
 
-loss_fn = tf.keras.losses.MeanSquaredError()
-opt = tf.keras.optimizers.legacy.Adam(learning_rate = 0.05)
+for i, (train_index, test_index) in enumerate(kf.split(X,y=y)):
+    x_train = [X[j] for j in train_index]
+    x_test = [X[j] for j in test_index]
+    y_train = [y[j] for j in train_index]
+    y_test = [y[j] for j in test_index]
 
-def acc_fn(out, y):
-    pred = tf.math.argmax(out, axis = 1)
-    one_hot = np.zeros((pred.shape[0], class_n))
-    one_hot[np.arange(pred.shape[0]), pred] = 1
-    vector = one_hot * 2 - 1
-    f = tf.cast(vector == y, tf.float32)
-    return float(tf.reduce_mean(f))
+    QRNNarr = QRNN(x_train,x_test,y_train,y_test).numpy()
+    QRNNacc[i] = QRNNarr[-1]
 
-#Classical Model
-
-model = tf.keras.Sequential([
-    tf.keras.layers.Dense(4, activation=tf.nn.relu, input_shape=(4,)),
-    tf.keras.layers.Dense(3, activation=tf.nn.tanh),
-])
-
-tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric_fn = acc_fn, epochs = epochs)
-
-plot(te_r, acc)
-
-#Quantum Model
-
-qml.enable_tape()
-cutoff_dim = 9
-dev = qml.device('strawberryfields.tf', cutoff_dim = cutoff_dim, wires = 4)
-qml.enable_tape()
-
-# it seems that it is not possible to calc qml.state() for fock space right now ...
-qml.enable_tape()
-
-model = tf.keras.Sequential([
-    QuantumDenseNet(4, class_n, layers = 2, dev = dev),
-    tf.keras.layers.Activation('tanh')
-])
-tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric_fn = acc_fn, epochs = epochs, record_trace = False)
-
-plot(te_r, acc)
+print("QRNN cross validations",QRNNacc)
+print("QRNN Accuracy", sum(QRNNacc)/len(QRNNacc))
