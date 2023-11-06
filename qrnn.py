@@ -437,14 +437,28 @@ def add_noise(data,percentage,mean,stddev):
     if percentage < 100 and percentage >=0:
         for i in range(data.shape[1]):
             for index in selected_indices:
-                data[index, i] += np.random.normal(mean,stddev,1)
+                data[index, i] += np.random.uniform(mean-stddev,mean+stddev)
                 
         return True
         
     else :
         return False
     
-add_noise(X,50,0,2)
+def add_class_noise(data,percentage):
+    num_samples=data.shape[0]
+    num_samples_to_select = int(percentage/100 * num_samples)
+    selected_indices = np.random.choice(num_samples, num_samples_to_select, replace=False)
+    
+    if percentage < 100 and percentage >=0:
+        for index in selected_indices:
+            data[index, -1] =(data[index, -1] + 1 )% 2
+                
+        return True
+        
+    else :
+        return False
+    
+add_noise(X,10,2)
 print(X[:5])
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
