@@ -429,15 +429,21 @@ y = one_hot
 # we will make targets to be a range from -1 to 1 for symmetry
 y = y * 2 - 1
 
-def add_noise(data,percentage,mean,stddev):
+from itertools import product
+import random
+
+def add_noise(data,percentage):
     num_samples=data.shape[0]
-    num_samples_to_select = int(percentage/100 * num_samples)
-    selected_indices = np.random.choice(num_samples, num_samples_to_select, replace=False)
+    num_columns=data.shape[1]
+    num_change = int(percentage/100 *num_samples*num_columns) 
+    pool = [*product(range(num_samples), range(num_columns))]
+
+    selected_entries = random.sample(pool,num_change)
+
     
     if percentage < 100 and percentage >=0:
-        for i in range(data.shape[1]):
-            for index in selected_indices:
-                data[index, i] += np.random.uniform(mean-stddev,mean+stddev)
+        for i,j in selected_entries:
+            data[i, j] += np.random.uniform(-2*statistics.stdev(data[:,j]),2*statistics.stdev(data[:,j]))
                 
         return True
         
@@ -458,7 +464,7 @@ def add_class_noise(data,percentage):
     else :
         return False
     
-add_noise(X,10,2)
+add_noise(X,10)
 print(X[:5])
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
