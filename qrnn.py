@@ -432,42 +432,33 @@ y = y * 2 - 1
 from itertools import product
 import random
 
-def add_noise(data,percentage):
+def add_attribute_noise(data,rn):
     num_samples=data.shape[0]
     num_columns=data.shape[1]
-    num_change = int(percentage/100 *num_samples*num_columns) 
-    pool = [*product(range(num_samples), range(num_columns))]
-
-    selected_entries = random.sample(pool,num_change)
 
     
-    if percentage < 100 and percentage >=0:
-        for i,j in selected_entries:
-            data[i, j] += np.random.uniform(-2*statistics.stdev(data[:,j]),2*statistics.stdev(data[:,j]))
+    for i in range(num_samples):
+        for j in range(num_columns):
+            	data[i, j] += np.random.uniform(-rn*statistics.stdev(data[:,j]),rn*statistics.stdev(data[:,j]))
                 
-        return True
-        
-    else :
-        return False
+
     
 def add_class_noise(data,percentage):
+    rng = np.random.default_rng()
     num_samples=data.shape[0]
     num_samples_to_select = int(percentage/100 * num_samples)
     selected_indices = np.random.choice(num_samples, num_samples_to_select, replace=False)
     
     if percentage < 100 and percentage >=0:
         for index in selected_indices:
-            data[index, -1] =(data[index, -1] + 1 )% 2
-                
-        return True
-        
-    else :
-        return False
+            rng.shuffle(data[index])
+
     
-add_noise(X,10)
-print(X[:5])
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+
+add_class_noise(y_train,70)
+print(y_train[:10])
 
 mean = np.mean(X_train, axis = 0)
 X_train -= mean
