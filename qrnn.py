@@ -394,25 +394,6 @@ def learn(model, train_ds, test_ds, loss_fn, opt, epochs, metric_fn = None, reco
     return tf.stack(train_loss_record), tf.stack(test_loss_record), tf.stack(metric_record)
 
 
-def plot(te_r, metric):
-    if metric.shape[0]:
-        fig, axes = plt.subplots(2, sharex=True, figsize=(12, 8))
-        fig.suptitle('Training Metrics')
-        axes[0].set_ylabel("Loss", fontsize=14)
-        axes[0].plot(te_r)
-
-        # axes[1].set_ylim([0, 1.05])
-        axes[1].set_ylabel("Metric", fontsize=14)
-        axes[1].set_xlabel("Epoch", fontsize=14)
-        axes[1].plot(metric)
-    else:
-        fig, axes = plt.subplots(1, sharex=True, figsize=(12, 4))
-        fig.suptitle('Training Metric')
-        axes.set_ylabel("Loss", fontsize=14)
-        axes.plot(te_r)
-
-    plt.show()
-
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 
@@ -432,6 +413,9 @@ y = y * 2 - 1
 from itertools import product
 import random
 
+#NOISE FUNCTIONS
+#################
+
 def add_attribute_noise(data,rn):
     num_samples=data.shape[0]
     num_columns=data.shape[1]
@@ -442,7 +426,21 @@ def add_attribute_noise(data,rn):
             	data[i, j] += np.random.uniform(-rn*statistics.stdev(data[:,j]),rn*statistics.stdev(data[:,j]))
                 
 
+def add_attribute_noise_gaussian(data,percentage):
+    num_samples=data.shape[0]
+    num_columns = data.shape[1]
+    num_samples_to_select = int(percentage/100 * num_samples * num_columns)
+
+    pool = [(a,b) for a in range(num_samples) for b in range(num_columns)]
+
+    pool = np.array(pool)
+
+    indices = pool[np.random.choice(len(pool), num_samples_to_select, replace=False)]
     
+    for i,j in indices:
+        data[i, j] += np.random.normal(0,statistics.stdev(data[:,j]))
+
+
 def add_class_noise(data,percentage):
     rng = np.random.default_rng()
     num_samples=data.shape[0]
@@ -453,12 +451,21 @@ def add_class_noise(data,percentage):
         for index in selected_indices:
             rng.shuffle(data[index])
 
+
+##########################
+
     
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
 
-add_class_noise(y_train,70)
-print(y_train[:10])
+
+#noise added here
+###################
+  
+add_attribute_noise_gaussian(X_train,0)
+print(X_train[:10])
+
+###################
 
 mean = np.mean(X_train, axis = 0)
 X_train -= mean
@@ -496,7 +503,6 @@ model = tf.keras.Sequential([
 
 tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric_fn = acc_fn, epochs = epochs)
 
-plot(te_r, acc)
 
 #Quantum Model
 
@@ -513,5 +519,3 @@ model = tf.keras.Sequential([
     tf.keras.layers.Activation('tanh')
 ])
 tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric_fn = acc_fn, epochs = epochs, record_trace = False)
-
-plot(te_r, acc)
