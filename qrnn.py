@@ -8,6 +8,11 @@ from numpy import pi
 
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
+
+# QUANTUM RNN ARCHITECTURE
+
+########################################
+
 # Encoding
 def encode_input(input_vec, q):
     if len(q) < input_vec.shape[0]:
@@ -224,7 +229,10 @@ def quantum_rnn_circuit(input, params, hidden_modes, output_size, return_state):
         return qml.state()
     else:
         return get_x_quad_expectations(np.arange(output_size))
+    
 
+# Build Quantum RNN via Quantum RNN cells
+######
 
 class QuantumRNN(tf.keras.layers.Layer):
     def __init__(self, hidden_modes, output_size, dev):
@@ -276,7 +284,6 @@ def quantum_dense_net_circuit(input, params, modes, output_size, layers, last_ac
         return qml.state()
     else:
         return get_x_quad_expectations(q[: output_size])
-
 
 class QuantumDenseNet(tf.keras.layers.Layer):
     def __init__(self, modes, output_size, layers, dev, last_activation = True):
@@ -394,6 +401,17 @@ def learn(model, train_ds, test_ds, loss_fn, opt, epochs, metric_fn = None, reco
     return tf.stack(train_loss_record), tf.stack(test_loss_record), tf.stack(metric_record)
 
 
+###############################################
+
+
+
+# MAIN CODE
+##############################################
+
+
+# LOAD DATA
+###################
+
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 
@@ -401,14 +419,26 @@ iris = load_iris()
 X = iris.data
 y = iris.target
 
+def to_one_hot(X, y):
+    X_one_hot = np.ones(list(X.shape) + [2])
+    X_one_hot[:, :, 0] -= X
+    X_one_hot[:, :, 1] = X
+    
+    class_n = max(y) + 1
+    one_hot = np.zeros((y.shape[0], class_n))
+    one_hot[np.arange(y.size), y] = 1
+
+    y_one_hot  = one_hot
+
+    y_one_hot = y_one_hot * 2 - 1
+    
+    return X_one_hot, y_one_hot
+
 
 class_n = max(y) + 1
-one_hot = np.zeros((y.shape[0], class_n))
-one_hot[np.arange(y.size), y] = 1
-y = one_hot
-# Because there is no alternative of sigmoid in quantum nets
-# we will make targets to be a range from -1 to 1 for symmetry
-y = y * 2 - 1
+X1,y1 = to_one_hot(X,y)
+
+###################
 
 from itertools import product
 import random
@@ -417,6 +447,12 @@ import random
 #################
 
 def add_attribute_noise(data,rn):
+
+    # for all datapoints we adjust the value by some random number in a uniform distribution
+    # we can vary the range of this uniform distribution to change the level of noise
+
+    #########################
+
     num_samples=data.shape[0]
     num_columns=data.shape[1]
 
@@ -427,6 +463,13 @@ def add_attribute_noise(data,rn):
                 
 
 def add_attribute_noise_gaussian(data,percentage):
+
+    # for a percentage of datapoints, we pick a random number from a gaussian distribution
+    # we can vary this percentage to change the level of noise
+
+    #########################
+
+
     num_samples=data.shape[0]
     num_columns = data.shape[1]
     num_samples_to_select = int(percentage/100 * num_samples * num_columns)
@@ -442,6 +485,10 @@ def add_attribute_noise_gaussian(data,percentage):
 
 
 def add_class_noise(data,percentage):
+
+    # for a percentage of datapoints, we randomly change the target class
+    # we can vary this percentage to change the level of noise
+
     rng = np.random.default_rng()
     num_samples=data.shape[0]
     num_samples_to_select = int(percentage/100 * num_samples)
@@ -456,16 +503,19 @@ def add_class_noise(data,percentage):
 
     
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X1, y1, random_state=42)
 
 
 #noise added here
+#only add noise to training set
 ###################
   
 add_attribute_noise_gaussian(X_train,0)
 print(X_train[:10])
 
 ###################
+
+# Normalize data
 
 mean = np.mean(X_train, axis = 0)
 X_train -= mean
@@ -477,14 +527,22 @@ X_test /=  anti_var
 
 tf.random.set_seed(42)
 
+# Hyperparameters
+
 bs = 4
 epochs = 10
+
+#Create training and test sets
 
 train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).batch(bs)
 test_dataset = tf.data.Dataset.from_tensor_slices((X_test, y_test)).batch(bs)
 
+#Loss function and Optimizers
+
 loss_fn = tf.keras.losses.MeanSquaredError()
 opt = tf.keras.optimizers.legacy.Adam(learning_rate = 0.05)
+
+#Accuracy calculation
 
 def acc_fn(out, y):
     pred = tf.math.argmax(out, axis = 1)
@@ -497,7 +555,7 @@ def acc_fn(out, y):
 #Classical Model
 
 model = tf.keras.Sequential([
-    tf.keras.layers.Dense(4, activation=tf.nn.relu, input_shape=(4,)),
+    tf.keras.layers.SimpleRNN(4),
     tf.keras.layers.Dense(3, activation=tf.nn.tanh),
 ])
 
@@ -508,14 +566,10 @@ tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric
 
 qml.enable_tape()
 cutoff_dim = 9
-dev = qml.device('strawberryfields.tf', cutoff_dim = cutoff_dim, wires = 4)
+dev = qml.device('strawberryfields.tf', cutoff_dim = cutoff_dim, wires = 8)
 qml.enable_tape()
 
-# it seems that it is not possible to calc qml.state() for fock space right now ...
 qml.enable_tape()
 
-model = tf.keras.Sequential([
-    QuantumDenseNet(4, class_n, layers = 2, dev = dev),
-    tf.keras.layers.Activation('tanh')
-])
+model = QuantumRNN(4,3,dev=dev)
 tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric_fn = acc_fn, epochs = epochs, record_trace = False)
