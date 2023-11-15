@@ -1,4 +1,4 @@
-# QML
+# QRNN vs RNN in the presence of noise
 # code for the QRNN is in the qrnn.py file
 # code for visualizing the noise is in the data_analysis.ipynb file
 
