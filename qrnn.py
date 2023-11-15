@@ -406,7 +406,14 @@ def learn(model, train_ds, test_ds, loss_fn, opt, epochs, metric_fn = None, reco
 
 
 # MAIN CODE
+
+# CHANGES MADE:
+# Added noise models
+# Used RNN and QuantumRNN on data
+# rather than a Dense Network and a Quantum Dense Network
 ##############################################
+
+
 
 
 # LOAD DATA
@@ -420,9 +427,8 @@ X = iris.data
 y = iris.target
 
 def to_one_hot(X, y):
-    X_one_hot = np.ones(list(X.shape) + [2])
-    X_one_hot[:, :, 0] -= X
-    X_one_hot[:, :, 1] = X
+    X_one_hot = np.ones(list(X.shape) + [1])
+    X_one_hot[:, :, 0] = X
     
     class_n = max(y) + 1
     one_hot = np.zeros((y.shape[0], class_n))
@@ -565,8 +571,8 @@ tr_r, te_r, acc = learn(model, train_dataset, test_dataset, loss_fn, opt, metric
 #Quantum Model
 
 qml.enable_tape()
-cutoff_dim = 9
-dev = qml.device('strawberryfields.tf', cutoff_dim = cutoff_dim, wires = 8)
+cutoff_dim = 6
+dev = qml.device('strawberryfields.tf', cutoff_dim = cutoff_dim, wires = 5)
 qml.enable_tape()
 
 qml.enable_tape()
